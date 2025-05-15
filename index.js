@@ -1,5 +1,8 @@
 // invoice-cli-qbo.js
 import readline from 'readline';
+import logger from './logger.js';
+
+logger.info('Initializing invoicer module');
 
 const ACCESS_TOKEN = 'YOUR_ACCESS_TOKEN'; // <-- Replace this
 const REALM_ID = 'YOUR_REALM_ID'; // <-- Replace this
@@ -10,16 +13,19 @@ const rl = readline.createInterface({
 });
 
 function ask(question) {
+  logger.debug('Asking question:', question);
   return new Promise(resolve => rl.question(question, resolve));
 }
 
 async function main() {
-  console.log('=== QuickBooks Invoice Generator ===');
+  logger.info('=== QuickBooks Invoice Generator ===');
 
   const invoice = {
     Line: [],
     CustomerRef: {}
   };
+  
+  logger.debug('Invoice object initialized');
 
   const customerName = await ask('Customer Name: ');
   const customerId = await ask('Customer ID (QuickBooks internal ID): ');
@@ -28,6 +34,8 @@ async function main() {
     value: customerId,
     name: customerName
   };
+  
+  logger.debug('Customer reference set:', invoice.CustomerRef);
 
   let addingItems = true;
   while (addingItems) {
@@ -35,7 +43,7 @@ async function main() {
     const quantity = await ask('Quantity: ');
     const unitPrice = await ask('Unit Price: ');
 
-    invoice.Line.push({
+    const lineItem = {
       Amount: Number(quantity) * Number(unitPrice),
       DetailType: 'SalesItemLineDetail',
       SalesItemLineDetail: {
@@ -47,7 +55,10 @@ async function main() {
         UnitPrice: Number(unitPrice)
       },
       Description: description
-    });
+    };
+    
+    logger.debug('Adding line item:', lineItem);
+    invoice.Line.push(lineItem);
 
     const addMore = await ask('Add another item? (yes/no): ');
     if (addMore.toLowerCase() !== 'yes') {
@@ -60,30 +71,39 @@ async function main() {
     Line: invoice.Line
   };
 
-  console.log('\nSending Invoice to QuickBooks...');
+  logger.info('\nSending Invoice to QuickBooks...');
+  logger.debug('Invoice data:', invoiceData);
 
-  const response = await fetch(`https://sandbox-quickbooks.api.intuit.com/v3/company/${REALM_ID}/invoice`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${ACCESS_TOKEN}`,
-      'Accept': 'application/json',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(invoiceData)
-  });
+  try {
+    const response = await fetch(`https://sandbox-quickbooks.api.intuit.com/v3/company/${REALM_ID}/invoice`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${ACCESS_TOKEN}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(invoiceData)
+    });
 
-  const data = await response.json();
+    const data = await response.json();
 
-  if (response.ok) {
-    console.log('✅ Invoice Created Successfully!');
-    console.log('Invoice ID:', data.Invoice.Id);
-  } else {
-    console.error('❌ Error Creating Invoice:');
-    console.error(JSON.stringify(data, null, 2));
+    if (response.ok) {
+      logger.info('✅ Invoice Created Successfully!');
+      logger.info('Invoice ID:', data.Invoice.Id);
+    } else {
+      logger.error('❌ Error Creating Invoice:');
+      logger.error(JSON.stringify(data, null, 2));
+    }
+  } catch (error) {
+    logger.error('Failed to send invoice to QuickBooks:', error);
   }
 
+  logger.debug('Closing readline interface');
   rl.close();
 }
 
-main();
+logger.info('Starting invoicer application');
+main().catch(error => {
+  logger.error('Unhandled error in main function:', error);
+});
 
